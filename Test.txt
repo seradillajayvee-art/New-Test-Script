@@ -1,0 +1,136 @@
+```
+{$CLEO .csa}
+
+03A4: name_thread 'RSPREAD'
+
+// ---------- SETTINGS ----------
+20@ = 1      // spread ON/OFF
+21@ = 1      // tracer ON/OFF
+
+16@ = 0      // previous ammo
+17@ = 0      // previous weapon
+
+:LOOP
+wait 0
+if
+  0256: player 0 defined
+jf @LOOP
+
+01F5: 0@ = player 0 actor
+0470: 1@ = actor 0@ current_weapon
+041A: 15@ = actor 0@ weapon 1@ ammo
+
+// ---------- SHOT DETECTION (ammo went down) ----------
+18@ = 0
+if and
+  1@ == 17@
+  16@ > 15@
+jf @SAVE
+18@ = 1
+
+:SAVE
+16@ = 15@
+17@ = 1@
+
+if
+  18@ == 1
+jf @LOOP
+
+// skip if in a vehicle
+if
+  00DF: actor 0@ driving
+jf @CHECK_WEAPON
+jump @LOOP
+
+// ---------- WEAPON FILTER (22-34 and 38) ----------
+:CHECK_WEAPON
+if or
+  1@ < 22
+  1@ > 38
+jf @CHECK_HEAVY
+jump @LOOP
+
+:CHECK_HEAVY
+if or
+  1@ == 35
+  1@ == 36
+  1@ == 37
+jf @TRACER_PART
+jump @LOOP
+
+// ---------- TRACER ----------
+:TRACER_PART
+if
+  21@ == 1
+jf @SPREAD_PART
+
+9@ = 0.0
+:TRACER_STEP
+10@ = 9@
+10@ *= 6.0
+10@ += 0.7
+04C4: store_coords_to 11@ 12@ 13@ from_actor 0@ with_offset 0.35 10@ 0.55
+064B: 14@ = create_fx_system 'prt_spark' at 11@ 12@ 13@ type 1
+064C: play_fx_system 14@
+064F: kill_fx_system 14@
+9@ += 1.0
+if
+  9@ < 6.0
+jf @SPREAD_PART
+jump @TRACER_STEP
+
+// ---------- SPREAD ----------
+:SPREAD_PART
+if
+  20@ == 1
+jf @LOOP
+
+2@ = 4              // pistols / default
+
+if or
+  1@ == 25
+  1@ == 26
+  1@ == 27
+jf @NOT_SHOTGUN
+2@ = 8
+jump @APPLY
+
+:NOT_SHOTGUN
+if or
+  1@ == 28
+  1@ == 29
+  1@ == 32
+jf @NOT_SMG
+2@ = 6
+jump @APPLY
+
+:NOT_SMG
+if or
+  1@ == 30
+  1@ == 31
+jf @NOT_RIFLE
+2@ = 5
+jump @APPLY
+
+:NOT_RIFLE
+if or
+  1@ == 33
+  1@ == 34
+jf @APPLY
+2@ = 1
+
+:APPLY
+4@ = 0
+4@ -= 2@            // min = -spread
+19@ = 2@
+19@ += 1            // max = spread + 1 (so it's balanced)
+0209: 3@ = random_int_in_ranges 4@ 19@
+0093: 3@ = integer 3@ to_float
+3@ *= 0.5
+
+0172: 5@ = actor 0@ Z_angle
+5@ += 3@
+0173: set_actor 0@ Z_angle_to 5@
+
+jump @LOOP
+```
