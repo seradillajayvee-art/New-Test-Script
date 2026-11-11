@@ -1,37 +1,78 @@
-```yaml
-name: Compile CLEO Script
+name: build-cleo
 
 on:
+  push:
+    branches: [main]
+    paths: ['src/**', '.github/workflows/build-cleo.yml']
   workflow_dispatch:
 
 jobs:
   compile:
     runs-on: windows-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download Sanny Builder 3
+      - name: Download Sanny Builder
         shell: pwsh
         run: |
-          $url = "https://github.com/sannybuilder/dev/releases/download/v3.8.0/sanny-3.8.0.zip"
-          Invoke-WebRequest -Uri $url -OutFile sanny.zip
-          Expand-Archive -Path sanny.zip -DestinationPath C:\Sanny
-          Get-ChildItem C:\Sanny
+          $ErrorActionPreference = 'Stop'
+          $url = "${{ vars.SANNY_INSTALLER_URL || 'https://sannybuilder.com/downloads/SannyBuilder4Setup.exe' }}"
+          Write-Host "Downloading: $url"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\sb.exe"
+          Get-Item "$env:RUNNER_TEMP\sb.exe" | Select-Object Name, Length
 
-      - name: Compile script
+      - name: Install (try silent flags until sanny.exe appears)
         shell: pwsh
         run: |
-          cd C:\Sanny
-          .\sanny.exe --mode sa_mobile --compile "${{ github.workspace }}\RealisticSpread.txt" "${{ github.workspace }}\RealisticSpread.csa"
-          Start-Sleep -Seconds 5
-          Get-ChildItem "${{ github.workspace }}"
+          $ErrorActionPreference = 'Stop'
+          $exe = "$env:RUNNER_TEMP\sb.exe"
+          $flagsets = @(
+            '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-',
+            '/SILENT /SUPPRESSMSGBOXES /NORESTART',
+            '/S'
+          )
+          $paths = @(
+            'C:\Program Files',
+            'C:\Program Files (x86)',
+            "$env:LOCALAPPDATA\Programs"
+          )
+          $found = $null
+          foreach ($f in $flagsets) {
+            Write-Host "--- trying: $f"
+            try { Start-Process $exe -ArgumentList $f -Wait -ErrorAction Stop } catch { Write-Host $_ }
+            $found = Get-ChildItem $paths -Recurse -Filter 'sanny.exe' -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
+            if ($found) { break }
+          }
+          if (-not $found) { throw 'sanny.exe not found after install — set SANNY_INSTALLER_URL or install manually' }
+          Write-Host "found: $($found.FullName)"
+          $found.FullName | Out-File -FilePath sanny_path.txt -Encoding utf8
 
-      - name: Upload compiled file
-        uses: actions/upload-artifact@v4
+      - name: Show CLI help (debug)
+        shell: pwsh
+        run: |
+          $sanny = Get-Content sanny_path.txt -Raw
+          & $sanny --help
+        continue-on-error: true
+
+      - name: Compile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sanny = (Get-Content sanny_path.txt -Raw).Trim()
+          New-Item -ItemType Directory -Force build | Out-Null
+          & $sanny --mode=sa --no-splash --compile "src\realspread.txt" "build\realspread.cs"
+          if ($LASTEXITCODE -ne 0) { throw "compiler exited $LASTEXITCODE" }
+          if (-not (Test-Path 'build\realspread.cs')) { throw 'no output file produced' }
+          $size = (Get-Item 'build\realspread.cs').Length
+          Write-Host "output size: $size bytes"
+          if ($size -lt 64) { throw 'output suspiciously small — script likely failed' }
+
+      - name: Rename to .csa
+        shell: pwsh
+        run: Copy-Item build\realspread.cs build\realspread.csa
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: RealisticSpread-Compiled
-          path: RealisticSpread.csa
-          retention-days: 30
-```
+          name: cleo-csa
+          path: build/*.csa
