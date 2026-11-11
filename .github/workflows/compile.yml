@@ -1,0 +1,37 @@
+```yaml
+name: Compile CLEO Script
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Sanny Builder 3
+        shell: pwsh
+        run: |
+          $url = "https://github.com/sannybuilder/dev/releases/download/v3.8.0/sanny-3.8.0.zip"
+          Invoke-WebRequest -Uri $url -OutFile sanny.zip
+          Expand-Archive -Path sanny.zip -DestinationPath C:\Sanny
+          Get-ChildItem C:\Sanny
+
+      - name: Compile script
+        shell: pwsh
+        run: |
+          cd C:\Sanny
+          .\sanny.exe --mode sa_mobile --compile "${{ github.workspace }}\RealisticSpread.txt" "${{ github.workspace }}\RealisticSpread.csa"
+          Start-Sleep -Seconds 5
+          Get-ChildItem "${{ github.workspace }}"
+
+      - name: Upload compiled file
+        uses: actions/upload-artifact@v4
+        with:
+          name: RealisticSpread-Compiled
+          path: RealisticSpread.csa
+          retention-days: 30
+```
