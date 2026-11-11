@@ -1,0 +1,32 @@
+{$CLEO .cs}
+{$VERSION 3.1.1000}
+
+const
+  CROSSHAIR_ADDR = 0x00000000
+end
+
+03A4: name_thread 'RSPRD'
+
+:RSPRD_loop
+0001: wait 0 ms
+
+if
+  0256: player $PLAYER_CHAR defined
+jf @RSPRD_loop
+
+// accuracy -> tighter spread
+// # VERIFY: confirm opcode 0348 and valid range in SB's command list
+0348: set_actor $PLAYER_ACTOR accuracy 100
+
+// crosshair patch (only if CROSSHAIR_ADDR set)
+// # VERIFY: 0A8C is CLEO's write_memory; confirm Android CLEO supports it
+if
+  0@ == 0
+jf @RSPRD_skip_patch
+01BD: 0@ = CROSSHAIR_ADDR
+0A8C: write_memory CROSSHAIR_ADDR size 1 value 0xC3 virtual_protect 1
+
+:RSPRD_skip_patch
+0001: wait 1000 ms
+0002: jump @RSPRD_loop
+                    
